@@ -324,7 +324,7 @@
 // ════════════════════════════════════════════════════════
 //  ⚙️  CONFIGURATION — only line you ever need to change
 // ════════════════════════════════════════════════════════
-const CSV_URL = "https://raw.githubusercontent.com/mishradev2404-boop/campaign-reporting-test/main/data/report.csv";
+const CSV_URL = "https://raw.githubusercontent.com/mishradev2404-boop/campaign-reporting-test/refs/heads/main/data/report.csv";
 // ════════════════════════════════════════════════════════
 
 let rows = [], meta = {}, chartRange = 'all';
@@ -334,21 +334,51 @@ let chartTimeline = null, chartPie = null, chartVideo = null;
 window.addEventListener('DOMContentLoaded', () => fetchReport());
 
 async function fetchReport() {
-    try {
-        const res = await fetch(CSV_URL + '?t=' + Date.now());
-        if (!res.ok) throw new Error('Server returned ' + res.status + '. Make sure the CSV file exists in the repository.');
-        const buf = await res.arrayBuffer();
-        const text = decodeBuffer(buf);
-        parseCSV(text);
-    } catch(err) {
-        document.getElementById('loadingScreen').classList.add('hidden');
-        document.getElementById('errorScreen').classList.add('show');
-        document.getElementById('errorMsg').textContent = err.message;
+    // Show loading
+    document.getElementById('loadingScreen').classList.remove('hidden');
+    document.getElementById('errorScreen').classList.remove('show');
+    document.getElementById('dashboard').style.display = 'none';
+
+    // Try raw URL first, then GitHub API as fallback
+    const attempts = [
+        { url: CSV_URL + '?t=' + Date.now(), label: 'raw' },
+        { url: CSV_URL.replace('raw.githubusercontent.com', 'raw.githubusercontent.com') + '?nocache=' + Date.now(), label: 'raw2' },
+        { url: 'https://api.github.com/repos/mishradev2404-boop/campaign-reporting-test/contents/data/report.csv', label: 'api', useAPI: true }
+    ];
+
+    let lastErr = '';
+    for (const attempt of attempts) {
+        try {
+            let text;
+            if (attempt.useAPI) {
+                // GitHub Contents API returns base64-encoded content
+                const res = await fetch(attempt.url, { headers: { 'Accept': 'application/vnd.github.v3.raw' } });
+                if (!res.ok) throw new Error('API ' + res.status);
+                const buf = await res.arrayBuffer();
+                text = decodeBuffer(buf);
+            } else {
+                const res = await fetch(attempt.url, { cache: 'no-store' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const buf = await res.arrayBuffer();
+                text = decodeBuffer(buf);
+            }
+
+            if (!text || text.length < 100) throw new Error('Empty response');
+            parseCSV(text);
+            return; // success — stop trying
+        } catch(e) {
+            lastErr = e.message;
+            console.warn('Attempt [' + attempt.label + '] failed:', e.message);
+        }
     }
+
+    // All attempts failed
+    showError('Could not load the report. Details: ' + lastErr + '. Please check the browser console (F12) for more info, or try refreshing.');
 }
 
 function doRefresh() {
     document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('errorScreen').classList.remove('show');
     document.getElementById('loadingScreen').classList.remove('hidden');
     fetchReport();
 }
