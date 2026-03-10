@@ -1,1 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkedIn Campaign Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg-black: #05090c;
+            --text-main: #ffffff;
+            --text-muted: rgba(255, 255, 255, 0.6);
+            --text-subtle: rgba(255, 255, 255, 0.4);
+            --grad-top: #003b5a;
+            --grad-mid: #0077B5;
+            --grad-btm: #00a0dc;
+            --surface-base: rgba(255, 255, 255, 0.03);
+            --border-subtle: rgba(255, 255, 255, 0.12);
+            --radius-card: 12px;
+            --radius-pill: 40px;
+            --accent-teal: #00a1a1;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background-color: var(--bg-black); color: var(--text-main); min-height: 100vh; overflow-x: hidden; display: flex; justify-content: center; }
+        .ambient-background { position: fixed; bottom: -20vh; left: 0; right: 0; height: 80vh; background: radial-gradient(circle at 50% 100%, var(--grad-mid) 0%, var(--grad-top) 50%, transparent 100%); opacity: 0.4; filter: blur(120px); z-index: -1; pointer-events: none; }
+        .layout-container { width: 100%; max-width: 1280px; padding: 48px 64px; display: grid; grid-template-columns: 1fr 40px; gap: 48px; position: relative; margin: 0 auto; }
+        h1 { font-size: 56px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+        h1 .muted { display: block; color: var(--grad-mid); font-weight: 600; margin-top: 4px; }
+        h2 { font-size: 20px; font-weight: 600; margin-bottom: 16px; letter-spacing: -0.01em; }
+        .label-sm { font-size: 12px; font-weight: 500; color: var(--text-muted); letter-spacing: 0.02em; }
+        .value-lg { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; margin: 4px 0; }
+        .card { background: rgba(255,255,255,0.04); backdrop-filter: blur(30px); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); padding: 24px; transition: all 0.2s ease; }
+        .card:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.2); }
+        .control-group { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+        .btn-primary { height: 44px; padding: 0 24px; border-radius: var(--radius-pill); background: var(--grad-mid); border: 1px solid rgba(255,255,255,0.1); color: #fff; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; gap: 8px; }
+        .btn-primary:hover { background: #0084ca; transform: translateY(-1px); }
+        .btn-secondary { height: 44px; padding: 0 20px; border-radius: var(--radius-pill); background: rgba(255,255,255,0.06); border: 1px solid var(--border-subtle); color: var(--text-main); font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; gap: 8px; }
+        .btn-secondary:hover { background: rgba(255,255,255,0.1); }
+        .btn-ghost { height: 36px; padding: 0 16px; border-radius: var(--radius-pill); background: transparent; border: 1px solid rgba(255,255,255,0.15); color: rgba(255,255,255,0.6); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+        .btn-ghost:hover { background: rgba(255,255,255,0.06); color: #fff; }
+        .main-content { display: flex; flex-direction: column; gap: 32px; }
+        .header-section { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 16px; }
 
+        /* ── LOADING OVERLAY ── */
+        .loading-overlay { position: fixed; inset: 0; background: rgba(5,9,12,0.92); backdrop-filter: blur(12px); z-index: 999; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 20px; }
+        .loading-overlay.active { display: flex; }
+        .spinner { width: 48px; height: 48px; border: 3px solid rgba(0,119,181,0.2); border-top-color: var(--grad-mid); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { font-size: 15px; color: rgba(255,255,255,0.6); }
+
+        /* ── SOURCE CONFIG BANNER ── */
+        .source-banner { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: rgba(0,119,181,0.08); border: 1px solid rgba(0,119,181,0.2); border-radius: 12px; flex-wrap: wrap; }
+        .source-banner .source-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: rgba(255,255,255,0.4); }
+        .source-banner .source-url { font-size: 13px; color: var(--grad-btm); font-family: 'Courier New', monospace; word-break: break-all; flex: 1; }
+        .source-banner .source-status { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; white-space: nowrap; }
+        .source-status.ok { background: rgba(0,161,161,0.12); border: 1px solid rgba(0,161,161,0.3); color: #00a1a1; }
+        .source-status.err { background: rgba(255,107,107,0.12); border: 1px solid rgba(255,107,107,0.3); color: #ff6b6b; }
+        .source-status.loading { background: rgba(0,119,181,0.12); border: 1px solid rgba(0,119,181,0.3); color: var(--grad-btm); }
+
+        /* ── CONFIG MODAL ── */
+        .modal-backdrop { position: fixed; inset: 0; background: rgba(5,9,12,0.85); backdrop-filter: blur(8px); z-index: 1000; display: none; align-items: center; justify-content: center; }
+        .modal-backdrop.active { display: flex; }
+        .modal { background: #0d1520; border: 1px solid rgba(0,119,181,0.3); border-radius: 16px; padding: 32px; max-width: 560px; width: 90%; }
+        .modal h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+        .modal p { font-size: 13px; color: rgba(255,255,255,0.5); margin-bottom: 20px; line-height: 1.6; }
+        .modal label { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 6px; }
+        .modal input[type="text"], .modal input[type="password"] { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 10px 14px; color: #fff; font-size: 13px; font-family: 'Courier New', monospace; outline: none; margin-bottom: 16px; }
+        .modal input:focus { border-color: var(--grad-mid); }
+        .modal .hint { font-size: 11px; color: rgba(255,255,255,0.3); margin-top: -10px; margin-bottom: 16px; line-height: 1.5; }
+        .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+        .mode-tabs { display: flex; gap: 4px; background: rgba(255,255,255,0.04); border-radius: 8px; padding: 4px; margin-bottom: 20px; }
+        .mode-tab { flex: 1; padding: 8px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; background: transparent; color: rgba(255,255,255,0.4); transition: all 0.2s; }
+        .mode-tab.active { background: var(--grad-mid); color: #fff; }
+
+        /* ── UPLOAD ZONE ── */
+        .upload-zone { border: 1px dashed var(--grad-mid); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px; text-align: center; cursor: pointer; background: rgba(0,119,181,0.03); border-radius: var(--radius-card); transition: all 0.2s; }
+        .upload-zone:hover { background: rgba(0,119,181,0.08); border-color: var(--grad-btm); }
+        .upload-zone.drag-over { background: rgba(0,119,181,0.15); border-color: var(--accent-teal); }
+
+        /* ── KPI ── */
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        .kpi-card { display: flex; flex-direction: column; justify-content: space-between; }
+        .chart-container { height: 240px; position: relative; }
+        .timeline-axis { position: sticky; top: 48px; height: calc(100vh - 96px); display: flex; flex-direction: column; align-items: center; }
+        .axis-line { width: 2px; flex: 1; background: linear-gradient(to bottom, var(--grad-mid) 0%, var(--accent-teal) 60%, rgba(255,255,255,0.05) 100%); border-radius: 2px; position: relative; margin: 16px 0; }
+        .axis-point { width: 8px; height: 8px; border-radius: 50%; background: var(--grad-btm); position: absolute; left: -3px; box-shadow: 0 0 8px var(--grad-mid); }
+        .axis-point.hollow { background: var(--bg-black); border: 2px solid var(--grad-mid); }
+        .axis-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
+        .axis-label.muted { color: var(--grad-mid); }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        .text-green { color: var(--accent-teal); } .text-red { color: #ff6b6b; }
+        svg { width: 16px; height: 16px; fill: currentColor; }
+        #fileInput { display: none; }
+        .campaign-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
+        .campaign-table th { text-align: right; padding: 0 12px 8px; font-size: 11px; font-weight: 500; color: rgba(255,255,255,0.5); letter-spacing: 0.05em; text-transform: uppercase; }
+        .campaign-table th:first-child { text-align: left; }
+        .campaign-table td { padding: 14px 12px; text-align: right; font-size: 14px; font-weight: 600; color: #fff; border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.08); }
+        .campaign-table td:first-child { border-left: 1px solid rgba(255,255,255,0.08); border-right: none; border-radius: 12px 0 0 12px; text-align: left; }
+        .campaign-table td:last-child { border-right: 1px solid rgba(255,255,255,0.08); border-left: none; border-radius: 0 12px 12px 0; }
+        .campaign-table tbody tr { background: rgba(255,255,255,0.04); transition: background 0.2s; }
+        .campaign-table tbody tr:hover { background: rgba(255,255,255,0.07); }
+        .status-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; margin-top: 4px; }
+        .status-active { color: var(--accent-teal); } .status-paused { color: rgba(255,255,255,0.4); }
+        .range-btn-group { display: flex; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 40px; padding: 4px; }
+        .range-btn { padding: 4px 14px; border-radius: 40px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; background: transparent; color: rgba(255,255,255,0.5); transition: all 0.2s; }
+        .range-btn.active { background: var(--grad-mid); color: #fff; }
+        .toast { position: fixed; bottom: 32px; right: 32px; z-index: 2000; background: rgba(0,119,181,0.9); border: 1px solid rgba(0,160,220,0.4); color: #fff; padding: 14px 20px; border-radius: 12px; font-size: 14px; font-weight: 600; backdrop-filter: blur(20px); transform: translateY(20px); opacity: 0; transition: all 0.3s; pointer-events: none; }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast.error { background: rgba(180,40,40,0.9); border-color: rgba(255,100,100,0.4); }
+        select.filter-select { background: rgba(255,255,255,0.06); border: 1px solid var(--border-subtle); color: var(--text-main); border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; outline: none; }
+        select.filter-select option { background: #0f1923; }
+        .section-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+        .no-data { color: var(--text-muted); font-size: 14px; text-align: center; padding: 24px; }
+        .refresh-time { font-size: 11px; color: rgba(255,255,255,0.3); }
+        @media (max-width: 900px) { .layout-container { padding: 24px 16px; grid-template-columns: 1fr; } .kpi-grid { grid-template-columns: repeat(2, 1fr); } .timeline-axis { display: none; } }
+    </style>
+</head>
+<body>
+<div class="ambient-background"></div>
+
+<!-- LOADING OVERLAY -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingText">Fetching latest report…</div>
+</div>
+
+<!-- CONFIG MODAL -->
+<div class="modal-backdrop" id="configModal">
+    <div class="modal">
+        <h3>📡 Data Source Configuration</h3>
+        <p>Connect the dashboard to your GitHub repository. The dashboard will automatically fetch and display the latest CSV report whenever it loads.</p>
+
+        <div class="mode-tabs">
+            <button class="mode-tab active" onclick="setModalMode('public')">🌐 Public Repo</button>
+            <button class="mode-tab" onclick="setModalMode('private')">🔒 Private Repo</button>
+            <button class="mode-tab" onclick="setModalMode('upload')">📁 Manual Upload</button>
+        </div>
+
+        <div id="modePublic">
+            <label>GitHub Raw CSV URL</label>
+            <input type="text" id="csvUrl" placeholder="https://raw.githubusercontent.com/username/repo/main/data/report.csv">
+            <div class="hint">Go to your CSV file on GitHub → click Raw → copy that URL. It looks like: <code style="color:var(--grad-btm)">raw.githubusercontent.com/…</code></div>
+        </div>
+
+        <div id="modePrivate" style="display:none;">
+            <label>GitHub API URL</label>
+            <input type="text" id="privateApiUrl" placeholder="https://api.github.com/repos/username/repo/contents/data/report.csv">
+            <div class="hint">Format: <code style="color:var(--grad-btm)">https://api.github.com/repos/{owner}/{repo}/contents/{path}</code></div>
+            <label>Personal Access Token</label>
+            <input type="password" id="githubToken" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+            <div class="hint">Generate at GitHub → Settings → Developer settings → Personal access tokens → Fine-grained. Needs <strong>Contents: Read</strong> permission. Stored in your browser only.</div>
+        </div>
+
+        <div id="modeUpload" style="display:none;">
+            <p style="color:rgba(255,255,255,0.4);font-size:13px;margin-bottom:12px;">Upload a CSV file directly from your computer. You'll need to re-upload each time you want to update the data.</p>
+            <button class="btn-secondary" onclick="document.getElementById('fileInputModal').click();closeModal();" style="width:100%;justify-content:center;">
+                <svg viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Choose CSV File
+            </button>
+        </div>
+
+        <div class="modal-actions">
+            <button class="btn-ghost" onclick="closeModal()">Cancel</button>
+            <button class="btn-primary" onclick="saveConfig()">
+                <svg viewBox="0 0 24 24" style="fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                Connect & Load
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="layout-container">
+    <main class="main-content">
+
+        <!-- HEADER -->
+        <header class="header-section">
+            <div>
+                <h1>Campaign <span class="muted">Analytics</span></h1>
+            </div>
+            <div class="control-group">
+                <button class="btn-ghost" onclick="openModal()" title="Configure data source">
+                    <svg viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+                    Configure Source
+                </button>
+                <button class="btn-secondary" onclick="refreshData()" id="refreshBtn" style="display:none;">
+                    <svg viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    Refresh
+                </button>
+                <button class="btn-secondary" onclick="document.getElementById('fileInput').click()">
+                    <svg viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    Upload CSV
+                </button>
+                <button class="btn-primary" id="downloadBtn" onclick="downloadReport()">
+                    <svg viewBox="0 0 24 24" style="fill:none;stroke:#fff;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;"><path d="M12 3v13m0 0l-4-4m4 4l4-4M3 21h18"/></svg>
+                    Download Report
+                </button>
+            </div>
+        </header>
+
+        <input type="file" id="fileInput" accept=".csv" onchange="handleFileUpload(event)">
+        <input type="file" id="fileInputModal" accept=".csv" onchange="handleFileUpload(event)">
+
+        <!-- SOURCE BANNER (shown when GitHub source is active) -->
+        <div class="source-banner" id="sourceBanner" style="display:none;">
+            <div>
+                <div class="source-label">Live Data Source</div>
+                <div class="source-url" id="sourceBannerUrl">—</div>
+            </div>
+            <div class="source-status loading" id="sourceBannerStatus">
+                <span id="sourceBannerDot">⏳</span> <span id="sourceBannerMsg">Loading…</span>
+            </div>
+            <span class="refresh-time" id="lastRefreshedLabel"></span>
+        </div>
+
+        <!-- UPLOAD STATE -->
+        <div id="uploadState">
+            <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+                <svg viewBox="0 0 24 24" style="width:48px;height:48px;fill:none;stroke:var(--grad-mid);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;margin-bottom:16px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <div style="font-size:18px;font-weight:700;margin-bottom:8px;">No Data Source Connected</div>
+                <div style="font-size:14px;color:var(--text-muted);max-width:400px;line-height:1.6;margin-bottom:20px;">
+                    Connect a GitHub repository to auto-sync, or upload a CSV manually.
+                </div>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
+                    <button class="btn-primary" onclick="event.stopPropagation();openModal()">
+                        <svg viewBox="0 0 24 24" style="fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+                        Connect GitHub Repo
+                    </button>
+                    <button class="btn-secondary" onclick="event.stopPropagation();document.getElementById('fileInput').click()">
+                        <svg viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Upload CSV Instead
+                    </button>
+                </div>
+                <div style="margin-top:24px;font-size:11px;color:rgba(255,255,255,0.2);">Supports LinkedIn Campaign Manager CSV exports · UTF-16 encoded</div>
+            </div>
+        </div>
+
+        <!-- DASHBOARD STATE -->
+        <div style="display:none;" id="dashboardState">
+
+            <!-- Ad Account Badge -->
+            <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;background:rgba(0,119,181,0.08);border:1px solid rgba(0,119,181,0.25);border-radius:12px;flex-wrap:wrap;">
+                <div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#0077B5,#00a1a1);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:1px;">
+                    <span style="font-size:11px;font-weight:500;color:rgba(255,255,255,0.45);letter-spacing:0.05em;text-transform:uppercase;">Ad Account</span>
+                    <span id="accountName" style="font-size:15px;font-weight:600;color:#fff;letter-spacing:-0.01em;">—</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;padding:4px 14px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:40px;">
+                    <svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:none;stroke:rgba(255,255,255,0.45);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span id="reportDateText" style="font-size:12px;font-weight:500;color:rgba(255,255,255,0.45);white-space:nowrap;">—</span>
+                </div>
+                <div style="margin-left:auto;display:flex;align-items:center;gap:6px;padding:4px 12px;background:rgba(0,161,161,0.12);border:1px solid rgba(0,161,161,0.3);border-radius:40px;">
+                    <div style="width:6px;height:6px;border-radius:50%;background:#00a1a1;"></div>
+                    <span style="font-size:12px;font-weight:600;color:#00a1a1;">Live</span>
+                </div>
+            </div>
+
+            <!-- KPIs -->
+            <section>
+                <h2>Overview</h2>
+                <div class="kpi-grid">
+                    <div class="card kpi-card"><span class="label-sm">Total Spend</span><div class="value-lg" id="kpiSpend">—</div><span class="label-sm text-green" id="kpiSpendSub">—</span></div>
+                    <div class="card kpi-card"><span class="label-sm">Total Impressions</span><div class="value-lg" id="kpiImpressions">—</div><span class="label-sm text-green" id="kpiImpressionsSub">—</span></div>
+                    <div class="card kpi-card"><span class="label-sm">Average CTR</span><div class="value-lg" id="kpiCTR">—</div><span class="label-sm" id="kpiCTRSub">—</span></div>
+                    <div class="card kpi-card"><span class="label-sm">Total Clicks</span><div class="value-lg" id="kpiClicks">—</div><span class="label-sm text-green" id="kpiClicksSub">—</span></div>
+                    <div class="card kpi-card"><span class="label-sm">Conversions</span><div class="value-lg" id="kpiConversions">—</div><span class="label-sm text-green" id="kpiConversionsSub">—</span></div>
+                    <div class="card kpi-card"><span class="label-sm">Leads</span><div class="value-lg" id="kpiLeads">—</div><span class="label-sm text-green" id="kpiLeadsSub">—</span></div>
+                    <div class="card kpi-card"><span class="label-sm">Avg CPM</span><div class="value-lg" id="kpiCPM">—</div><span class="label-sm" id="kpiCPMSub">—</span></div>
+                    <div class="card kpi-card"><span class="label-sm">Avg CPC</span><div class="value-lg" id="kpiCPC">—</div><span class="label-sm" id="kpiCPCSub">—</span></div>
+                </div>
+            </section>
+
+            <!-- TIMELINE -->
+            <section>
+                <div class="flex-between" style="margin-bottom:16px;">
+                    <h2 style="margin-bottom:0;">Performance Timeline</h2>
+                    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+                        <select class="filter-select" id="timelineMetric" onchange="renderChart()">
+                            <option value="spend">Daily Spend</option>
+                            <option value="impressions">Impressions</option>
+                            <option value="clicks">Clicks</option>
+                            <option value="ctr">CTR (%)</option>
+                            <option value="conversions">Conversions</option>
+                        </select>
+                        <div class="range-btn-group">
+                            <button class="range-btn active" onclick="setRange(this,'all')">All</button>
+                            <button class="range-btn" onclick="setRange(this,'30D')">30D</button>
+                            <button class="range-btn" onclick="setRange(this,'14D')">14D</button>
+                            <button class="range-btn" onclick="setRange(this,'7D')">7D</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card"><div class="chart-container"><canvas id="timelineChart"></canvas></div></div>
+            </section>
+
+            <!-- SPEND PIE -->
+            <section>
+                <h2>Spend by Campaign</h2>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                    <div class="card"><div style="height:260px;position:relative;"><canvas id="spendPieChart"></canvas></div></div>
+                    <div class="card" style="display:flex;flex-direction:column;justify-content:center;gap:10px;" id="spendLegend"></div>
+                </div>
+            </section>
+
+            <!-- CAMPAIGN TABLE -->
+            <section>
+                <div class="section-controls">
+                    <h2 style="margin-bottom:0;flex:1;">Campaign Performance</h2>
+                    <select class="filter-select" id="statusFilter" onchange="renderCampaignTable()">
+                        <option value="all">All Statuses</option>
+                        <option value="Active">Active</option>
+                        <option value="Paused">Paused</option>
+                        <option value="Completed">Completed</option>
+                    </select>
+                    <select class="filter-select" id="sortField" onchange="renderCampaignTable()">
+                        <option value="spend">Sort: Spend ↓</option>
+                        <option value="impressions">Sort: Impressions ↓</option>
+                        <option value="ctr">Sort: CTR ↓</option>
+                        <option value="clicks">Sort: Clicks ↓</option>
+                        <option value="conversions">Sort: Conversions ↓</option>
+                        <option value="leads">Sort: Leads ↓</option>
+                    </select>
+                </div>
+                <div style="overflow-x:auto;">
+                    <table class="campaign-table" id="campaignTable">
+                        <thead><tr>
+                            <th style="text-align:left;">Campaign</th>
+                            <th>Spend</th><th>Impressions</th><th>Clicks</th><th>CTR</th>
+                            <th>Avg CPM</th><th>Avg CPC</th><th>Conversions</th><th>Leads</th><th>Reach</th><th>Avg Freq.</th>
+                        </tr></thead>
+                        <tbody id="campaignTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- VIDEO (conditional) -->
+            <section id="videoSection" style="display:none;">
+                <h2>Video Performance</h2>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                    <div class="card"><div class="label-sm" style="margin-bottom:12px;">Completion Funnel</div><div id="videoFunnel" style="display:flex;flex-direction:column;gap:10px;margin-top:8px;"></div></div>
+                    <div class="card"><div style="height:220px;position:relative;"><canvas id="videoChart"></canvas></div></div>
+                </div>
+            </section>
+
+            <!-- DAILY TABLE -->
+            <section>
+                <div class="section-controls">
+                    <h2 style="margin-bottom:0;flex:1;">Daily Breakdown</h2>
+                    <select class="filter-select" id="dailyCampaignFilter" onchange="renderDailyTable()">
+                        <option value="all">All Campaigns</option>
+                    </select>
+                </div>
+                <div style="overflow-x:auto;max-height:400px;overflow-y:auto;">
+                    <table class="campaign-table" id="dailyTable">
+                        <thead style="position:sticky;top:0;background:#05090c;z-index:1;"><tr>
+                            <th style="text-align:left;">Date</th><th>Campaign</th><th>Spend</th>
+                            <th>Impressions</th><th>Clicks</th><th>CTR</th><th>CPM</th><th>CPC</th><th>Conversions</th><th>Reach</th>
+                        </tr></thead>
+                        <tbody id="dailyTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <aside class="timeline-axis">
+        <span class="axis-label muted" id="axisTop">—</span>
+        <div class="axis-line">
+            <div class="axis-point" style="top:0%;"></div>
+            <div class="axis-point hollow" style="top:40%;"></div>
+            <div class="axis-point hollow" style="top:80%;"></div>
+        </div>
+        <span class="axis-label" style="color:var(--grad-btm);" id="axisBottom">—</span>
+    </aside>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+let allRows = [];
+let reportMeta = {};
+let chartRange = 'all';
+let timelineChartInstance = null;
+let spendPieInstance = null;
+let videoChartInstance = null;
+let currentModalMode = 'public';
+let githubConfig = null;  // { mode, url, token? }
+
+const STORAGE_KEY = 'li_dashboard_config';
+
+// ═══════════════════════════════════════════════════════════════
+// INIT — restore saved config and auto-load on page open
+// ═══════════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+        try {
+            githubConfig = JSON.parse(saved);
+            if (githubConfig.mode === 'public' || githubConfig.mode === 'private') {
+                autoLoadFromGitHub();
+                return;
+            }
+        } catch(e) {}
+    }
+    // No saved config — show upload state
+});
+
+// ═══════════════════════════════════════════════════════════════
+// MODAL
+// ═══════════════════════════════════════════════════════════════
+function openModal() {
+    document.getElementById('configModal').classList.add('active');
+    // Pre-fill from saved config
+    if (githubConfig) {
+        if (githubConfig.mode === 'public') {
+            setModalMode('public');
+            document.getElementById('csvUrl').value = githubConfig.url || '';
+        } else if (githubConfig.mode === 'private') {
+            setModalMode('private');
+            document.getElementById('privateApiUrl').value = githubConfig.url || '';
+            document.getElementById('githubToken').value = githubConfig.token || '';
+        }
+    }
+}
+function closeModal() { document.getElementById('configModal').classList.remove('active'); }
+
+function setModalMode(mode) {
+    currentModalMode = mode;
+    document.querySelectorAll('.mode-tab').forEach((t,i) => {
+        t.classList.toggle('active', ['public','private','upload'][i] === mode);
+    });
+    document.getElementById('modePublic').style.display   = mode === 'public'  ? 'block' : 'none';
+    document.getElementById('modePrivate').style.display  = mode === 'private' ? 'block' : 'none';
+    document.getElementById('modeUpload').style.display   = mode === 'upload'  ? 'block' : 'none';
+}
+
+function saveConfig() {
+    if (currentModalMode === 'upload') { closeModal(); return; }
+
+    if (currentModalMode === 'public') {
+        const url = document.getElementById('csvUrl').value.trim();
+        if (!url) { showToast('⚠ Please enter a GitHub raw URL.', true); return; }
+        // Auto-correct github.com URLs to raw.githubusercontent.com
+        const fixed = url
+            .replace('https://github.com/', 'https://raw.githubusercontent.com/')
+            .replace('/blob/', '/');
+        githubConfig = { mode: 'public', url: fixed };
+    } else {
+        const url   = document.getElementById('privateApiUrl').value.trim();
+        const token = document.getElementById('githubToken').value.trim();
+        if (!url)   { showToast('⚠ Please enter the API URL.', true); return; }
+        if (!token) { showToast('⚠ Please enter your GitHub token.', true); return; }
+        githubConfig = { mode: 'private', url, token };
+    }
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(githubConfig));
+    closeModal();
+    autoLoadFromGitHub();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GITHUB FETCH
+// ═══════════════════════════════════════════════════════════════
+function showSourceBanner(url, statusClass, msg) {
+    const banner = document.getElementById('sourceBanner');
+    banner.style.display = 'flex';
+    document.getElementById('sourceBannerUrl').textContent = url;
+    const status = document.getElementById('sourceBannerStatus');
+    status.className = 'source-status ' + statusClass;
+    document.getElementById('sourceBannerMsg').textContent = msg;
+    document.getElementById('sourceBannerDot').textContent =
+        statusClass === 'ok' ? '●' : statusClass === 'err' ? '✕' : '⏳';
+}
+
+async function autoLoadFromGitHub() {
+    if (!githubConfig) return;
+    showLoadingOverlay('Fetching latest report from GitHub…');
+    showSourceBanner(githubConfig.url, 'loading', 'Fetching…');
+    document.getElementById('refreshBtn').style.display = 'flex';
+
+    try {
+        let text;
+        if (githubConfig.mode === 'public') {
+            // Add cache-busting so we always get the freshest file
+            const bust = '?t=' + Date.now();
+            const res = await fetch(githubConfig.url + bust);
+            if (!res.ok) throw new Error('HTTP ' + res.status + ' — check the URL is a valid raw GitHub link.');
+            const buf = await res.arrayBuffer();
+            // Decode as UTF-16 LE (LinkedIn's export format), fall back to UTF-8
+            try { text = new TextDecoder('utf-16le').decode(buf); }
+            catch(e) { text = new TextDecoder('utf-8').decode(buf); }
+        } else {
+            // Private repo — use GitHub Contents API
+            const res = await fetch(githubConfig.url, {
+                headers: {
+                    'Authorization': 'token ' + githubConfig.token,
+                    'Accept': 'application/vnd.github.v3.raw'
+                }
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status + ' — check the token and API URL.');
+            const buf = await res.arrayBuffer();
+            try { text = new TextDecoder('utf-16le').decode(buf); }
+            catch(e) { text = new TextDecoder('utf-8').decode(buf); }
+        }
+
+        parseLinkedInCSV(text, true);
+        const now = new Date().toLocaleTimeString();
+        showSourceBanner(githubConfig.url, 'ok', 'Synced · ' + now);
+        document.getElementById('lastRefreshedLabel').textContent = 'Last refreshed: ' + now;
+        showToast('✓ Dashboard updated from GitHub');
+    } catch(err) {
+        hideLoadingOverlay();
+        showSourceBanner(githubConfig.url, 'err', err.message);
+        showToast('❌ ' + err.message, true);
+    }
+}
+
+function refreshData() { autoLoadFromGitHub(); }
+
+// ═══════════════════════════════════════════════════════════════
+// LOADING OVERLAY
+// ═══════════════════════════════════════════════════════════════
+function showLoadingOverlay(msg) {
+    document.getElementById('loadingText').textContent = msg || 'Loading…';
+    document.getElementById('loadingOverlay').classList.add('active');
+}
+function hideLoadingOverlay() {
+    document.getElementById('loadingOverlay').classList.remove('active');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FILE UPLOAD (manual)
+// ═══════════════════════════════════════════════════════════════
+const uploadZone = document.getElementById('uploadZone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+    e.preventDefault(); uploadZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) readFileAndParse(file);
+});
+
+function handleFileUpload(e) {
+    const file = e.target.files[0];
+    if (file) readFileAndParse(file);
+}
+
+function readFileAndParse(file) {
+    showLoadingOverlay('Reading file…');
+    const reader = new FileReader();
+    reader.onload = e => {
+        const buf = e.target.result;
+        let text;
+        try { text = new TextDecoder('utf-16le').decode(buf); }
+        catch(ex) { text = new TextDecoder('utf-8').decode(buf); }
+        parseLinkedInCSV(text, false);
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CSV PARSING
+// ═══════════════════════════════════════════════════════════════
+function parseLinkedInCSV(text, fromGitHub) {
+    reportMeta = {};
+    const lines = text.split(/\r?\n/);
+
+    for (let i = 0; i < Math.min(8, lines.length); i++) {
+        const line = lines[i];
+        const m1 = line.match(/Report Start:\s*([^\t\n,"]+)/);  if (m1) reportMeta.startDate = m1[1].trim();
+        const m2 = line.match(/Report End:\s*([^\t\n,"]+)/);    if (m2) reportMeta.endDate   = m2[1].trim();
+        const m3 = line.match(/Date Generated:\s*([^\t\n,"]+)/);if (m3) reportMeta.generated = m3[1].trim();
+    }
+
+    let headerIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].includes('Start Date') && lines[i].includes('Account Name')) { headerIdx = i; break; }
+    }
+    if (headerIdx === -1) { hideLoadingOverlay(); showToast('❌ Could not find data header row.', true); return; }
+
+    const csvText = lines.slice(headerIdx).join('\n');
+    const parsed = Papa.parse(csvText, { header: true, delimiter: '\t', skipEmptyLines: true });
+
+    if (!parsed.data || parsed.data.length === 0) { hideLoadingOverlay(); showToast('❌ No data rows found.', true); return; }
+
+    allRows = parsed.data.filter(r => r['Campaign Name'] && r['Campaign Name'].trim());
+    if (allRows.length === 0) { hideLoadingOverlay(); showToast('❌ No campaign rows found.', true); return; }
+
+    reportMeta.currency = allRows[0]['Currency'] || 'USD';
+
+    document.getElementById('uploadState').style.display = 'none';
+    document.getElementById('dashboardState').style.display = 'block';
+
+    populateDashboard();
+    hideLoadingOverlay();
+
+    if (!fromGitHub) {
+        // Clear GitHub config when manually uploading
+        githubConfig = null;
+        localStorage.removeItem(STORAGE_KEY);
+        document.getElementById('sourceBanner').style.display = 'none';
+        document.getElementById('refreshBtn').style.display = 'none';
+        showToast('✓ Report loaded — ' + allRows.length + ' rows, ' + getUniqueCampaigns().length + ' campaigns');
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════
+const currencySymbols = { GBP:'£', USD:'$', EUR:'€', AUD:'A$', CAD:'C$' };
+function currSym() { return currencySymbols[reportMeta.currency] || '$'; }
+function parseNum(val) { if (!val || val===''||val==='--') return 0; return parseFloat(String(val).replace(/[,%]/g,''))||0; }
+function fmtCurrency(n) { return n>=1000 ? currSym()+(n/1000).toFixed(1)+'K' : currSym()+n.toFixed(2); }
+function fmtCurrencyFull(n) { return currSym()+n.toFixed(2); }
+function fmtNum(n) { if(n>=1000000) return (n/1000000).toFixed(2)+'M'; if(n>=1000) return (n/1000).toFixed(1)+'K'; return n.toLocaleString(); }
+function fmtPct(n) { return n.toFixed(3)+'%'; }
+function getUniqueCampaigns() { return [...new Set(allRows.map(r=>r['Campaign Name']))]; }
+
+function aggregateByCampaign() {
+    const map = {};
+    for (const r of allRows) {
+        const name = r['Campaign Name'];
+        if (!map[name]) map[name] = { name, status: r['Campaign Status']||'Unknown', spend:0, impressions:0, clicks:0, ctrVals:[], cpmVals:[], cpcVals:[], conversions:0, leads:0, reach:0, freqVals:[], videoPlays:0, videoViews:0, v25:0, v50:0, v75:0, vComplete:0 };
+        const c = map[name];
+        c.spend+=parseNum(r['Total Spent']); c.impressions+=parseNum(r['Impressions']); c.clicks+=parseNum(r['Clicks']);
+        c.conversions+=parseNum(r['Conversions']); c.leads+=parseNum(r['Leads']); c.reach+=parseNum(r['Reach']);
+        c.videoPlays+=parseNum(r['Video Plays']); c.videoViews+=parseNum(r['Video Views']);
+        c.v25+=parseNum(r['Video Views at 25%']); c.v50+=parseNum(r['Video Views at 50%']);
+        c.v75+=parseNum(r['Video Views at 75%']); c.vComplete+=parseNum(r['Video Completions']);
+        const ctr=parseNum(r['Click Through Rate']); if(ctr>0) c.ctrVals.push(ctr);
+        const cpm=parseNum(r['Average CPM']); if(cpm>0) c.cpmVals.push(cpm);
+        const cpc=parseNum(r['Average CPC']); if(cpc>0) c.cpcVals.push(cpc);
+        const freq=parseNum(r['Average Frequency']); if(freq>0) c.freqVals.push(freq);
+    }
+    for (const c of Object.values(map)) {
+        c.ctr = c.ctrVals.length ? c.ctrVals.reduce((a,b)=>a+b,0)/c.ctrVals.length : 0;
+        c.cpm = c.cpmVals.length ? c.cpmVals.reduce((a,b)=>a+b,0)/c.cpmVals.length : 0;
+        c.cpc = c.cpcVals.length ? c.cpcVals.reduce((a,b)=>a+b,0)/c.cpcVals.length : 0;
+        c.freq = c.freqVals.length ? c.freqVals.reduce((a,b)=>a+b,0)/c.freqVals.length : 0;
+    }
+    return Object.values(map);
+}
+
+function aggregateByDate() {
+    const map = {};
+    for (const r of allRows) {
+        const date = r['Start Date (in UTC)']; if(!date) continue;
+        if(!map[date]) map[date]={date,spend:0,impressions:0,clicks:0,ctr:[],conversions:0,leads:0};
+        map[date].spend+=parseNum(r['Total Spent']); map[date].impressions+=parseNum(r['Impressions']);
+        map[date].clicks+=parseNum(r['Clicks']); map[date].conversions+=parseNum(r['Conversions']);
+        map[date].leads+=parseNum(r['Leads']);
+        const ctr=parseNum(r['Click Through Rate']); map[date].ctr.push(ctr);
+    }
+    return Object.values(map)
+        .map(d=>({...d, ctr: d.ctr.length ? d.ctr.reduce((a,b)=>a+b,0)/d.ctr.length : 0}))
+        .sort((a,b)=>new Date(a.date)-new Date(b.date));
+}
+
+function getFilteredDates() {
+    const d=aggregateByDate();
+    if(chartRange==='all') return d;
+    const days=chartRange==='30D'?30:chartRange==='14D'?14:7;
+    return d.slice(-days);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DASHBOARD POPULATION
+// ═══════════════════════════════════════════════════════════════
+function populateDashboard() {
+    populateAccountBadge(); populateKPIs(); renderChart();
+    renderSpendPie(); renderCampaignTable(); renderDailyTable();
+    populateDailyCampaignFilter(); checkVideoData(); updateAxisLabels();
+}
+
+function populateAccountBadge() {
+    document.getElementById('accountName').textContent = allRows[0]['Account Name']||'Unknown Account';
+    let dateStr = '';
+    if(reportMeta.startDate && reportMeta.endDate) dateStr = reportMeta.startDate+' – '+reportMeta.endDate;
+    else if(reportMeta.generated) dateStr = 'Generated: '+reportMeta.generated;
+    document.getElementById('reportDateText').textContent = dateStr;
+}
+
+function populateKPIs() {
+    const c=aggregateByCampaign();
+    const totalSpend=c.reduce((s,x)=>s+x.spend,0), totalImpr=c.reduce((s,x)=>s+x.impressions,0);
+    const totalClicks=c.reduce((s,x)=>s+x.clicks,0), totalConv=c.reduce((s,x)=>s+x.conversions,0);
+    const totalLeads=c.reduce((s,x)=>s+x.leads,0);
+    const withCTR=c.filter(x=>x.ctr>0), withCPM=c.filter(x=>x.cpm>0), withCPC=c.filter(x=>x.cpc>0);
+    const avgCTR=withCTR.length?withCTR.reduce((s,x)=>s+x.ctr,0)/withCTR.length:0;
+    const avgCPM=withCPM.length?withCPM.reduce((s,x)=>s+x.cpm,0)/withCPM.length:0;
+    const avgCPC=withCPC.length?withCPC.reduce((s,x)=>s+x.cpc,0)/withCPC.length:0;
+    document.getElementById('kpiSpend').textContent=fmtCurrency(totalSpend);
+    document.getElementById('kpiSpendSub').textContent=c.length+' campaigns';
+    document.getElementById('kpiImpressions').textContent=fmtNum(totalImpr);
+    document.getElementById('kpiImpressionsSub').textContent='across all campaigns';
+    document.getElementById('kpiCTR').textContent=fmtPct(avgCTR);
+    document.getElementById('kpiCTRSub').textContent='avg across campaigns';
+    document.getElementById('kpiClicks').textContent=fmtNum(totalClicks);
+    document.getElementById('kpiClicksSub').textContent='total link clicks';
+    document.getElementById('kpiConversions').textContent=fmtNum(totalConv);
+    document.getElementById('kpiConversionsSub').textContent='total conversions';
+    document.getElementById('kpiLeads').textContent=fmtNum(totalLeads);
+    document.getElementById('kpiLeadsSub').textContent='total leads';
+    document.getElementById('kpiCPM').textContent=fmtCurrencyFull(avgCPM);
+    document.getElementById('kpiCPMSub').textContent='avg cost per 1K impr.';
+    document.getElementById('kpiCPC').textContent=fmtCurrencyFull(avgCPC);
+    document.getElementById('kpiCPCSub').textContent='avg cost per click';
+}
+
+function setRange(btn,range) {
+    chartRange=range;
+    document.querySelectorAll('.range-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active'); renderChart();
+}
+
+function renderChart() {
+    const metric=document.getElementById('timelineMetric').value;
+    const data=getFilteredDates();
+    const labels=data.map(d=>{const dt=new Date(d.date);return(dt.getMonth()+1)+'/'+dt.getDate();});
+    const metricMap={
+        spend:{key:'spend',label:'Daily Spend ('+currSym()+')'},
+        impressions:{key:'impressions',label:'Impressions'},
+        clicks:{key:'clicks',label:'Clicks'},
+        ctr:{key:'ctr',label:'CTR (%)'},
+        conversions:{key:'conversions',label:'Conversions'}
+    };
+    const m=metricMap[metric];
+    const values=data.map(d=>Math.round(d[m.key]*100)/100);
+    if(timelineChartInstance) timelineChartInstance.destroy();
+    const ctx=document.getElementById('timelineChart').getContext('2d');
+    const gradient=ctx.createLinearGradient(0,0,0,240);
+    gradient.addColorStop(0,'rgba(0,119,181,0.4)'); gradient.addColorStop(1,'rgba(0,119,181,0)');
+    timelineChartInstance=new Chart(ctx,{
+        type:'line',
+        data:{labels,datasets:[{label:m.label,data:values,borderColor:'#0077B5',backgroundColor:gradient,borderWidth:2,pointBackgroundColor:'#00a0dc',pointRadius:data.length>20?2:4,pointHoverRadius:6,fill:true,tension:0.4}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(5,9,12,0.95)',borderColor:'rgba(0,119,181,0.5)',borderWidth:1,titleColor:'#fff',bodyColor:'#aaa',callbacks:{label:ctx=>{const v=ctx.parsed.y;if(metric==='spend')return' '+currSym()+v.toFixed(2);if(metric==='ctr')return' '+v.toFixed(3)+'%';return' '+v.toLocaleString();}}}}},
+        scales:{x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'rgba(255,255,255,0.4)',maxTicksLimit:10}},y:{grid:{color:'rgba(255,255,255,0.06)'},ticks:{color:'rgba(255,255,255,0.4)',callback:v=>metric==='spend'?currSym()+v:metric==='ctr'?v+'%':v>=1000?(v/1000)+'K':v}}}}
+    });
+}
+
+const PIE_COLORS=['#0077B5','#00a1a1','#00c4cc','#005f8a','#0097c4','#00e5e5','#003f6a','#007a99','#00bcd4','#4fc3f7'];
+
+function renderSpendPie() {
+    const campaigns=aggregateByCampaign().sort((a,b)=>b.spend-a.spend);
+    const labels=campaigns.map(c=>c.name), values=campaigns.map(c=>c.spend);
+    const colors=campaigns.map((_,i)=>PIE_COLORS[i%PIE_COLORS.length]);
+    if(spendPieInstance) spendPieInstance.destroy();
+    const ctx=document.getElementById('spendPieChart').getContext('2d');
+    spendPieInstance=new Chart(ctx,{
+        type:'doughnut',
+        data:{labels,datasets:[{data:values,backgroundColor:colors,borderColor:'#05090c',borderWidth:3,hoverOffset:8}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(5,9,12,0.95)',borderColor:'rgba(0,119,181,0.5)',borderWidth:1,callbacks:{label:ctx=>' '+currSym()+ctx.parsed.toFixed(2)+' ('+((ctx.parsed/values.reduce((a,b)=>a+b,0))*100).toFixed(1)+'%)'}}}}}
+    });
+    const total=values.reduce((a,b)=>a+b,0);
+    document.getElementById('spendLegend').innerHTML=campaigns.map((c,i)=>`
+        <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:10px;height:10px;border-radius:50%;background:${colors[i]};flex-shrink:0;"></div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;">${c.name}</div>
+                <div style="font-size:11px;color:rgba(255,255,255,0.4);">${currSym()}${c.spend.toFixed(2)} · ${((c.spend/total)*100).toFixed(1)}%</div>
+            </div>
+        </div>`).join('');
+}
+
+function renderCampaignTable() {
+    const statusFilter=document.getElementById('statusFilter').value;
+    const sort=document.getElementById('sortField').value;
+    let campaigns=aggregateByCampaign();
+    if(statusFilter!=='all') campaigns=campaigns.filter(c=>c.status===statusFilter);
+    campaigns.sort((a,b)=>(b[sort]||0)-(a[sort]||0));
+    const tbody=document.getElementById('campaignTableBody');
+    if(!campaigns.length){tbody.innerHTML='<tr><td colspan="11" class="no-data">No campaigns match the filter.</td></tr>';return;}
+    tbody.innerHTML=campaigns.map(c=>{
+        const isActive=c.status==='Active';
+        const ctrColor=c.ctr>0.5?'var(--accent-teal)':c.ctr<0.03?'#ff6b6b':'#fff';
+        return`<tr>
+            <td style="min-width:180px;">
+                <div style="font-size:14px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;">${c.name}</div>
+                <span class="status-badge ${isActive?'status-active':'status-paused'}">● ${c.status}</span>
+            </td>
+            <td>${fmtCurrencyFull(c.spend)}</td><td>${fmtNum(c.impressions)}</td><td>${fmtNum(c.clicks)}</td>
+            <td style="color:${ctrColor}">${fmtPct(c.ctr)}</td><td>${fmtCurrencyFull(c.cpm)}</td>
+            <td>${fmtCurrencyFull(c.cpc)}</td><td>${fmtNum(c.conversions)}</td><td>${fmtNum(c.leads)}</td>
+            <td>${fmtNum(c.reach)}</td><td>${c.freq.toFixed(2)}×</td>
+        </tr>`;
+    }).join('');
+}
+
+function populateDailyCampaignFilter() {
+    const sel=document.getElementById('dailyCampaignFilter');
+    sel.innerHTML='<option value="all">All Campaigns</option>'+
+        getUniqueCampaigns().map(c=>`<option value="${c}">${c}</option>`).join('');
+}
+
+function renderDailyTable() {
+    const filter=document.getElementById('dailyCampaignFilter').value;
+    let rows=filter==='all'?allRows:allRows.filter(r=>r['Campaign Name']===filter);
+    rows=[...rows].sort((a,b)=>new Date(b['Start Date (in UTC)'])-new Date(a['Start Date (in UTC)']));
+    const tbody=document.getElementById('dailyTableBody');
+    if(!rows.length){tbody.innerHTML='<tr><td colspan="10" class="no-data">No data.</td></tr>';return;}
+    tbody.innerHTML=rows.map(r=>{
+        const spend=parseNum(r['Total Spent']),impr=parseNum(r['Impressions']),clicks=parseNum(r['Clicks']);
+        const ctr=parseNum(r['Click Through Rate']),cpm=parseNum(r['Average CPM']),cpc=parseNum(r['Average CPC']);
+        const conv=parseNum(r['Conversions']),reach=parseNum(r['Reach']);
+        const ctrColor=ctr>0.5?'var(--accent-teal)':ctr<0.03?'#ff6b6b':'#fff';
+        return`<tr>
+            <td style="text-align:left;white-space:nowrap;">${r['Start Date (in UTC)']}</td>
+            <td style="text-align:left;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;">${r['Campaign Name']}</td>
+            <td>${fmtCurrencyFull(spend)}</td><td>${fmtNum(impr)}</td><td>${fmtNum(clicks)}</td>
+            <td style="color:${ctrColor}">${fmtPct(ctr)}</td><td>${fmtCurrencyFull(cpm)}</td>
+            <td>${fmtCurrencyFull(cpc)}</td><td>${conv||0}</td><td>${fmtNum(reach)}</td>
+        </tr>`;
+    }).join('');
+}
+
+function checkVideoData() {
+    const hasVideo=allRows.some(r=>parseNum(r['Video Plays'])>0);
+    document.getElementById('videoSection').style.display=hasVideo?'block':'none';
+    if(hasVideo) renderVideoSection();
+}
+
+function renderVideoSection() {
+    const campaigns=aggregateByCampaign().filter(c=>c.videoPlays>0);
+    if(!campaigns.length) return;
+    const totalPlays=campaigns.reduce((s,c)=>s+c.videoPlays,0);
+    const total25=campaigns.reduce((s,c)=>s+c.v25,0), total50=campaigns.reduce((s,c)=>s+c.v50,0);
+    const total75=campaigns.reduce((s,c)=>s+c.v75,0), totalComplete=campaigns.reduce((s,c)=>s+c.vComplete,0);
+    const steps=[{label:'Plays',val:totalPlays,pct:100},{label:'25% Watched',val:total25,pct:totalPlays?(total25/totalPlays*100):0},{label:'50% Watched',val:total50,pct:totalPlays?(total50/totalPlays*100):0},{label:'75% Watched',val:total75,pct:totalPlays?(total75/totalPlays*100):0},{label:'Completed',val:totalComplete,pct:totalPlays?(totalComplete/totalPlays*100):0}];
+    document.getElementById('videoFunnel').innerHTML=steps.map(s=>`
+        <div><div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="font-size:12px;color:rgba(255,255,255,0.5);">${s.label}</span><span style="font-size:12px;font-weight:600;color:#fff;">${fmtNum(s.val)} <span style="color:var(--accent-teal);">(${s.pct.toFixed(1)}%)</span></span></div><div style="height:4px;border-radius:2px;background:rgba(255,255,255,0.07);"><div style="height:4px;border-radius:2px;background:linear-gradient(to right,#0077B5,#00a1a1);width:${s.pct}%;"></div></div></div>`).join('');
+    if(videoChartInstance) videoChartInstance.destroy();
+    const ctx=document.getElementById('videoChart').getContext('2d');
+    videoChartInstance=new Chart(ctx,{type:'bar',data:{labels:campaigns.map(c=>c.name.length>20?c.name.slice(0,18)+'…':c.name),datasets:[{label:'Plays',data:campaigns.map(c=>c.videoPlays),backgroundColor:'rgba(0,119,181,0.7)',borderRadius:4},{label:'Completions',data:campaigns.map(c=>c.vComplete),backgroundColor:'rgba(0,161,161,0.7)',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'rgba(255,255,255,0.5)',boxWidth:10}},tooltip:{backgroundColor:'rgba(5,9,12,0.95)',borderColor:'rgba(0,119,181,0.5)',borderWidth:1}},scales:{x:{grid:{display:false},ticks:{color:'rgba(255,255,255,0.4)',maxRotation:30}},y:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'rgba(255,255,255,0.4)'}}}}});
+}
+
+function updateAxisLabels() {
+    const dates=aggregateByDate(); if(!dates.length) return;
+    const fmt=d=>{const dt=new Date(d);return dt.toLocaleString('default',{month:'short'}).toUpperCase();};
+    document.getElementById('axisTop').textContent=fmt(dates[0].date);
+    document.getElementById('axisBottom').textContent=fmt(dates[dates.length-1].date);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DOWNLOAD
+// ═══════════════════════════════════════════════════════════════
+function downloadReport() {
+    if(!allRows.length){showToast('⚠ No data to download — load a report first.',true);return;}
+    const campaigns=aggregateByCampaign();
+    const lines=['LinkedIn Campaign Report — Downloaded from Dashboard',
+        'Report Period: '+(reportMeta.startDate||'')+' to '+(reportMeta.endDate||''),
+        'Account: '+(allRows[0]?.['Account Name']||''),'Currency: '+reportMeta.currency,'',
+        'CAMPAIGN SUMMARY',
+        ['Campaign','Status','Spend','Impressions','Clicks','CTR','Avg CPM','Avg CPC','Conversions','Leads','Reach','Avg Freq'].join(','),
+        ...campaigns.map(c=>[`"${c.name}"`,c.status,c.spend.toFixed(2),c.impressions,c.clicks,c.ctr.toFixed(4)+'%',c.cpm.toFixed(2),c.cpc.toFixed(2),c.conversions,c.leads,c.reach,c.freq.toFixed(2)+'x'].join(',')),
+        '','DAILY BREAKDOWN',
+        ['Date','Campaign','Spend','Impressions','Clicks','CTR','CPM','CPC','Conversions','Leads'].join(','),
+        ...allRows.map(r=>[r['Start Date (in UTC)'],`"${r['Campaign Name']}"`,parseNum(r['Total Spent']).toFixed(2),parseNum(r['Impressions']),parseNum(r['Clicks']),r['Click Through Rate'],parseNum(r['Average CPM']).toFixed(2),parseNum(r['Average CPC']).toFixed(2),parseNum(r['Conversions']),parseNum(r['Leads'])].join(','))
+    ].join('\n');
+    const blob=new Blob([lines],{type:'text/csv'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url;
+    a.download='linkedin-campaign-report-'+new Date().toISOString().slice(0,10)+'.csv';
+    a.click(); URL.revokeObjectURL(url);
+    showToast('✓ Report downloaded');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════════
+function showToast(msg, isError) {
+    const t=document.getElementById('toast');
+    t.textContent=msg;
+    t.className='toast'+(isError?' error':'');
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer=setTimeout(()=>t.classList.remove('show'),3500);
+}
+</script>
+</body>
+</html>
